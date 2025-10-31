@@ -1,0 +1,17 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="container text-center mt-5">
+  {% if tx %}
+    {% if tx.status == 'successful' %}
+      <h2>✅ Payment Successful!</h2>
+      <p>You bought {{ tx.crypto_amount }} {{ tx.crypto }} for ₦{{ tx.naira_amount }}.</p>
+    {% else %}
+      <h2>⏳ Payment Processing...</h2>
+      <p>We’re verifying your transaction. Please refresh shortly.</p>
+    {% endif %}
+  {% else %}
+    <h2>❌ Transaction not found</h2>
+  {% endif %}
+  <a href="{% url 'home' %}" class="btn btn-primary mt-3">Go Back Home</a>
+</div>
+{% endblock %}

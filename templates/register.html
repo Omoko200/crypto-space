@@ -1,0 +1,68 @@
+{% extends 'base.html' %}
+{% block title %}Register{% endblock %}
+{% block content %}
+<h2>Register</h2>
+<form method="post" class="row g-3">
+  {% csrf_token %}
+  
+  <div class="col-md-6">
+    <label>Username</label>
+    <input type="text" name="username" placeholder="enter your username" class="form-control"required>
+    {{ form.username }}
+  </div>
+
+  <div class="col-md-6">
+    <label>Email</label>
+    <input type="text" name="email" placeholder="enter your email address" class="form-control" required>
+    {{ form.email }}
+  </div>
+
+  <div class="col-md-6">
+    <label>Full Name</label>
+    {{ form.full_name }}
+  </div>
+
+  <div class="col-md-6">
+    <label>Phone Number</label>
+    {{ form.phone_number }}
+  </div>
+
+  <div class="col-md-6">
+    <label>Date of Birth</label>
+    {{ form.date_of_birth }}
+  </div>
+
+  <div class="col-md-6">
+    <label>National ID</label>
+    {{ form.national_id }}
+  </div>
+
+  <div class="col-md-6">
+    <label>BVN</label>
+    {{ form.bvn }}
+  </div>
+
+  <div class="col-12">
+    <label>Address</label>
+    {{ form.address }}
+  </div>
+
+  <div class="col-md-6">
+    <label>Password</label>
+    <input type="password" name="password1" placeholder="enter your password" class="form-control" required>
+    {{ form.password1 }}
+  </div>
+
+  <div class="col-md-6">
+    <label>Confirm Password</label>
+    <input type="password" name="password2" placeholder="confirm your password" class="form-control"required>
+    {{ form.password2 }}
+  </div>
+
+  <div class="col-12">
+    <button class="btn btn-primary" type="submit">Create Account</button>
+  </div>
+</form>
+
+<p class="mt-3">Already have an account? <a href="{% url 'login' %}">Login here</a></p>
+{% endblock %}

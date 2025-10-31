@@ -1,0 +1,77 @@
+{% extends 'base.html' %}
+{% block title %}Buy Crypto - CryptoApp{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center mt-5">
+  <div class="col-md-6">
+    <h3 class="mb-4 text-center">Buy Crypto with Naira</h3>
+    <form method="POST" id="buyForm">
+      {% csrf_token %}
+      <div class="mb-3">
+        <label class="form-label">Select Cryptocurrency</label>
+        <select name="crypto_symbol" id="crypto_symbol" class="form-select" required>
+          <option value="">-- Choose Crypto --</option>
+          <option value="BTC">Bitcoin (BTC)</option>
+          <option value="ETH">Ethereum (ETH)</option>
+          <option value="USDT">Tether (USDT)</option>
+        </select>
+      </div>
+      <div class="mb-3">
+        <label class="form-label">Amount (₦)</label>
+        <input type="number" name="amount_ngn" id="amount_ngn" class="form-control" min="1000" step="100" required>
+      </div>
+
+      <div id="conversion_result" class="alert alert-secondary d-none text-center"></div>
+
+      <button type="submit" class="btn btn-success w-100">Buy Now</button>
+    </form>
+    <div class="text-center mt-3">
+      <a href="{% url 'home' %}">← Back to Dashboard</a>
+    </div>
+  </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+  const amountInput = document.getElementById('amount_ngn');
+  const cryptoSelect = document.getElementById('crypto_symbol');
+  const resultDiv = document.getElementById('conversion_result');
+
+  function fetchConversion() {
+    const crypto = cryptoSelect.value;
+    const amount = amountInput.value;
+
+    if (!crypto || !amount || amount < 1000) {
+      resultDiv.classList.add('d-none');
+      return;
+    }
+
+    fetch(`/api/convert/?crypto_symbol=${crypto}&amount_ngn=${amount}`)
+      .then(res => res.json())
+      .then(data => {
+        if (data.error) {
+          resultDiv.textContent = "Unable to fetch conversion.";
+          resultDiv.classList.remove('d-none', 'alert-success');
+          resultDiv.classList.add('alert-warning');
+        } else {
+          resultDiv.innerHTML = `
+            ₦${parseFloat(amount).toLocaleString()} ≈ 
+            <strong>${data.crypto_amount} ${data.crypto_symbol}</strong>
+            <br><small>1 ${data.crypto_symbol} = ₦${data.price_in_ngn.toLocaleString()}</small>
+          `;
+          resultDiv.classList.remove('d-none', 'alert-warning');
+          resultDiv.classList.add('alert-success');
+        }
+      })
+      .catch(() => {
+        resultDiv.textContent = "Error fetching conversion.";
+        resultDiv.classList.remove('d-none', 'alert-success');
+        resultDiv.classList.add('alert-danger');
+      });
+  }
+
+  amountInput.addEventListener('input', fetchConversion);
+  cryptoSelect.addEventListener('change', fetchConversion);
+});
+</script>
+{% endblock %}
