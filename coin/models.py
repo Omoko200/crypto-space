@@ -48,6 +48,7 @@ class CryptoTransaction(models.Model):
     amount_ngn = models.DecimalField(max_digits=12, decimal_places=2)
     crypto_symbol = models.CharField(max_length=10)
     crypto_amount = models.DecimalField(max_digits=20, decimal_places=8)
+    rate = models.DecimalField(max_digits=20, decimal_places=2, null=True, blank=True)
     status = models.CharField(max_length=30, choices=STATUS_CHOICES, default="pending")
     created_at = models.DateTimeField(auto_now_add=True)
 

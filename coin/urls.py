@@ -8,8 +8,9 @@ urlpatterns = [
     path('api/price-quote/', views.price_quote, name='price_quote'),
     path('api/initialize-paystack/', views.initialize_paystack, name='initialize_paystack'),
     path('paystack/webhook/', views.paystack_webhook, name='paystack_webhook'),
-    path("paystack/callback/", views.paystack_callback, name="paystack_callback"), 
-
+    path("paystack/callback/", views.paystack_callback, name="paystack_callback"),
+    # path('transactions/', views.transaction_history, name='transaction_history'),
+    
     # normal user views
     path('register/', views.register, name='register'),
     path('login/', views.login, name='login'),

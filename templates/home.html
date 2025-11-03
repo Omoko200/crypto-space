@@ -46,30 +46,29 @@
   <tbody>
     {% for cryptotransaction in cryptotransactions %}
     <tr>
-      <td>{{ cryptotransaction.get_crypto_symbol_display }}</td>
-      <td>{{ cryptotransaction.amount_crypto }}</td>
-      <td>{{ cryptotransaction.amount_naira }}</td>
+      <td>{{ cryptotransaction.crypto_symbol }}</td>
+      <td>{{ cryptotransaction.crypto_amount|floatformat:8  }}</td>
+      <td>{{ cryptotransaction.amount_ngn|floatformat:2 }}</td>
       <td>{{ cryptotransaction.status }}</td>
       <td>{{ cryptotransaction.created_at|date:"Y-m-d H:i" }}</td>
     </tr>
+     <td>
+          {% if cryptotransaction.status == "success" %}
+            <span class="badge bg-success">Success</span>
+          {% elif cryptotransaction.status == "pending" %}
+            <span class="badge bg-warning text-dark">Pending</span>
+          {% elif cryptotransaction.status == "failed" %}
+            <span class="badge bg-danger">Failed</span>
+          {% else %}
+            <span class="badge bg-secondary">{{ cryptotransaction.status }}</span>
+          {% endif %}
+        </td>
     {% empty %}
     <tr><td colspan="5" class="text-center">No transactions yet.</td></tr>
     {% endfor %}
   </tbody>
 </table>
 
-<!-- <script>
-document.getElementById("quoteBtn").onclick = function() {
-  const symbol = document.getElementById("crypto").value;
-  const amount = document.getElementById("amount").value;
-  fetch(`/api/price-quote/?symbol=${symbol}&amount=${amount}`)
-  .then(res => res.json())
-  .then(data => {
-    document.getElementById("quoteResult").innerText =
-      `1 ${symbol} = ₦${data.price_naira.toLocaleString()} | You’ll get ${data.crypto_amount} ${symbol}`;
-  });
-};
-</script> -->
 <script>
 document.getElementById("payButton").addEventListener("click", function() {
     const crypto_symbol = document.getElementById("crypto_symbol").value;

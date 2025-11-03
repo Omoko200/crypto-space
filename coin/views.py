@@ -41,17 +41,12 @@ def price_quote(request):
     data = r.json()
     return Response(data)
 
+
 @api_view(["POST"])
 @permission_classes([IsAuthenticated])
 def initialize_paystack(request):
     """
     Initialize a Paystack transaction for buying crypto.
-    Expects POST fields:
-      - crypto (e.g. 'BTC' or 'ETH')
-      - amount (NGN as string or number, e.g. "5000" or "5000.00")
-    Returns:
-      - redirect to Paystack payment page on success
-      - JSON error on failure (helpful when invoked via AJAX)
     """
     if not PAYSTACK_SECRET_KEY:
         return JsonResponse({"error": "Paystack secret key not configured."}, status=500)
@@ -59,72 +54,70 @@ def initialize_paystack(request):
     crypto = request.POST.get("crypto")
     amount_raw = request.POST.get("amount")
 
-    if not crypto:
-        return JsonResponse({"error": "Missing 'crypto' field."}, status=400)
-    if not amount_raw:
-        return JsonResponse({"error": "Missing 'amount' field."}, status=400)
+    if not crypto or not amount_raw:
+        return JsonResponse({"error": "Missing required fields."}, status=400)
 
+    # Validate and convert amount
     try:
         amount_naira = Decimal(amount_raw)
-    except (InvalidOperation, TypeError, ValueError):
+        if amount_naira < Decimal("100"):
+            return JsonResponse({"error": "Minimum amount is ₦100."}, status=400)
+        amount_kobo = int(amount_naira * 100)
+    except Exception:
         return JsonResponse({"error": "Invalid amount format."}, status=400)
 
-    MIN_NGN = Decimal("100") 
-    if amount_naira < MIN_NGN:
-        return JsonResponse({"error": f"Minimum amount is ₦{MIN_NGN}."}, status=400)
-
+    # 🔹 Fetch conversion rate from your own price_quote API
     try:
-        amount_kobo = int(amount_naira * 100) 
-    except (TypeError, InvalidOperation) as e:
-        return JsonResponse({"error": "Could not convert amount to kobo."}, status=400)
+        quote_url = f"http://127.0.0.1:8000/api/price-quote/?symbol={crypto}&convert=NGN"
+        r = requests.get(quote_url, timeout=10)
+        data = r.json()
+        rate = Decimal(str(data["data"]["quote"]["NGN"]["price"]))  # NGN per 1 crypto
+        amount_crypto = amount_naira / rate
+    except Exception as e:
+        return JsonResponse({"error": f"Failed to fetch crypto rate: {e}"}, status=400)
 
+    # 🔹 Create the Paystack transaction
     url = "https://api.paystack.co/transaction/initialize"
     headers = {
         "Authorization": f"Bearer {PAYSTACK_SECRET_KEY}",
         "Content-Type": "application/json",
     }
     payload = {
-        "email": request.user.email if request.user.is_authenticated else "no-reply@example.com",
+        "email": request.user.email,
         "amount": amount_kobo,
         "callback_url": request.build_absolute_uri("/paystack/callback/"),
         "metadata": {
-            "crypto": crypto,
-            "user_id": request.user.id if request.user.is_authenticated else None
-        }
+            "crypto_symbol": crypto.upper(),
+            "amount_naira": str(amount_naira),
+            "amount_crypto": str(round(amount_crypto, 8)),
+            "rate": str(rate),
+            "user_id": request.user.id,
+        },
     }
+
     res = requests.post(url, json=payload, headers=headers, timeout=20)
-    try:
-        res_json = res.json()
-    except ValueError:
-        return JsonResponse({"error": "Invalid response from Paystack."}, status=502)
+    res_json = res.json()
 
     if not res_json.get("status"):
-        message = res_json.get("message") or res_json.get("data", {}).get("message") or "Paystack initialization failed."
+        message = res_json.get("message") or "Paystack initialization failed."
         return JsonResponse({"error": message, "raw": res_json}, status=400)
 
-    
     paystack_data = res_json["data"]
-    authorization_url = paystack_data.get("authorization_url")
     reference = paystack_data.get("reference")
+    auth_url = paystack_data.get("authorization_url")
 
-    try:
-        tx = CryptoTransaction.objects.create(
-            user=request.user,
-            paystack_ref=reference,
-            amount_ngn=amount_naira,
-            crypto_symbol=crypto,
-            crypto_amount=Decimal("0"),
-            status="pending",
-        )
-    except Exception as e:
-        
-        return JsonResponse({"error": "Could not create transaction record.", "details": str(e)}, status=500)
+    # 🔹 Save to DB
+    CryptoTransaction.objects.create(
+        user=request.user,
+        paystack_ref=reference,
+        amount_ngn=amount_naira,
+        crypto_symbol=crypto.upper(),
+        crypto_amount=amount_crypto,
+        rate=rate,
+        status="pending",
+    )
 
-    
-    if authorization_url:
-        return redirect(authorization_url)
-    else:
-        return JsonResponse({"error": "No authorization URL returned by Paystack.", "raw": res_json}, status=500)
+    return redirect(auth_url)
 
 
 @csrf_exempt
@@ -174,67 +167,126 @@ def complete_transaction(request, crypto_symbol, amount_crypto, amount_naira):
     wallet.save()
 
 
-
 @csrf_exempt
 def paystack_callback(request):
-    reference = request.GET.get('reference') or request.GET.get('trxref')
+    reference = request.GET.get("reference")
+
     if not reference:
-        return render(request, 'error.html', {'message': 'No payment reference found'})
+        return JsonResponse({"error": "Missing reference"}, status=400)
 
-    headers = {"Authorization": f"Bearer {settings.PAYSTACK_SECRET_KEY}"}
+    # ✅ Verify transaction with Paystack
     url = f"https://api.paystack.co/transaction/verify/{reference}"
-    response = requests.get(url, headers=headers)
-    result = response.json()
+    headers = {"Authorization": f"Bearer {PAYSTACK_SECRET_KEY}"}
+    res = requests.get(url, headers=headers, timeout=10)
+    data = res.json()
 
-    if result['data']['status'] == 'success':
-        user = request.user
-        amount_naira = Decimal(result['data']['amount']) / 100  
-        crypto_symbol = result['data']['metadata']['crypto_symbol']
-        amount_crypto = Decimal(result['data']['metadata']['amount_crypto'])
+    if not data.get("status"):
+        return JsonResponse({"error": "Invalid Paystack verification."}, status=400)
+
+    paystack_data = data.get("data", {})
+    metadata = paystack_data.get("metadata", {})
+    print("PAYSTACK METADATA:", metadata)  # 👈 this will show in terminal
+
+    user_id = metadata.get("user_id")
+    crypto_symbol = metadata.get("crypto_symbol")
+    amount_naira = Decimal(paystack_data.get("amount", 0)) / 100  
+
+    if not user_id or not crypto_symbol:
+        return JsonResponse({"error": "Missing metadata info."}, status=400)
+
+    user = User.objects.get(id=user_id)
+    wallet, _ = Wallet.objects.get_or_create(user=user)
+
+    quote_url = "https://pro-api.coinmarketcap.com/v1/tools/price-conversion"
+    params = {"amount": float(amount_naira), "symbol": "NGN", "convert": crypto_symbol}
+    price_res = requests.get(quote_url, headers=CMC_HEADERS, params=params, timeout=10)
+    price_data = price_res.json()
+    amount_crypto = Decimal(price_data["data"]["quote"][crypto_symbol]["price"])
+
+    tx, created = CryptoTransaction.objects.update_or_create(
+        paystack_ref=reference,
+        defaults={
+            "user": user,
+            "crypto_symbol": crypto_symbol,
+            "amount_ngn": amount_naira,
+            "crypto_amount": amount_crypto,
+            "status": "completed",
+        },
+    )
+
+    if crypto_symbol == "BTC":
+        wallet.btc_balance += amount_crypto
+    elif crypto_symbol == "ETH":
+        wallet.eth_balance += amount_crypto
+    wallet.save()
+
+    print(f"💰 Wallet updated: {crypto_symbol} +{amount_crypto}")
+    messages.success(request, f"Payment successful! {amount_crypto:.8f} {crypto_symbol} added to your wallet.")
+    return redirect("home")
+
+# @csrf_exempt
+# def paystack_callback(request):
+#     reference = request.GET.get('reference') or request.GET.get('trxref')
+#     if not reference:
+#         return render(request, 'error.html', {'message': 'No payment reference found'})
+
+#     headers = {"Authorization": f"Bearer {settings.PAYSTACK_SECRET_KEY}"}
+#     url = f"https://api.paystack.co/transaction/verify/{reference}"
+#     response = requests.get(url, headers=headers)
+#     result = response.json()
+
+#     if result['data']['status'] == 'success':
+#         user = request.user
+#         amount_naira = Decimal(result['data']['amount']) / 100  
+#         crypto_symbol = result['data']['metadata']['crypto_symbol']
+#         amount_crypto = Decimal(result['data']['metadata']['amount_crypto'])
 
         
-        wallet, created = Wallet.objects.get_or_create(user=user)
+#         wallet, created = Wallet.objects.get_or_create(user=user)
 
     
-        transaction, created = CryptoTransaction.objects.get_or_create(
-            reference=reference,
-            defaults={
-                'user': user,
-                'crypto_symbol': crypto_symbol,
-                'amount_crypto': amount_crypto,
-                'amount_naira': amount_naira,
-                'status': 'completed',
-            }
-        )
+#         transaction, created = CryptoTransaction.objects.get_or_create(
+#             reference=reference,
+#             defaults={
+#                 'user': user,
+#                 'crypto_symbol': crypto_symbol,
+#                 'amount_crypto': amount_crypto,
+#                 'amount_naira': amount_naira,
+#                 'status': 'completed',
+#             }
+#         )
 
         
-        if created:
-            if crypto_symbol == 'BTC':
-                wallet.btc_balance += amount_crypto
-            elif crypto_symbol == 'ETH':
-                wallet.eth_balance += amount_crypto
-            wallet.save()
+#         if created:
+#             if crypto_symbol == 'BTC':
+#                 wallet.btc_balance += amount_crypto
+#             elif crypto_symbol == 'ETH':
+#                 wallet.eth_balance += amount_crypto
+#             wallet.save()
 
-        return redirect('home') 
+#         return redirect('home') 
 
-    else:
-        return render(request, 'error.html', {'message': 'Payment verification failed.'})
+#     else:
+#         return render(request, 'error.html', {'message': 'Payment verification failed.'})
 
-def paystack_callback(request):
-    """
-    Handles Paystack callback after payment.
-    """
-    reference = request.GET.get('reference')
-    if not reference:
-        return HttpResponse("Invalid callback: missing reference.", status=400)
 
-    try:
-        transaction = CryptoTransaction.objects.get(paystack_ref=reference)
-        transaction.status = "success"
-        transaction.save()
-        return redirect("home")
-    except CryptoTransaction.DoesNotExist:
-        return HttpResponse("Transaction not found.", status=404)
+
+
+# def paystack_callback(request):
+#     """
+#     Handles Paystack callback after payment.
+#     """
+#     reference = request.GET.get('reference')
+#     if not reference:
+#         return HttpResponse("Invalid callback: missing reference.", status=400)
+
+#     try:
+#         transaction = CryptoTransaction.objects.get(paystack_ref=reference)
+#         transaction.status = "success"
+#         transaction.save()
+#         return redirect("home")
+#     except CryptoTransaction.DoesNotExist:
+#         return HttpResponse("Transaction not found.", status=404)
 
 def register(request):
     if request.method == 'POST':
@@ -281,11 +333,10 @@ def home(request):
 
 
 
-
-
 def logout_view(request):
     auth_logout(request)
     return redirect('login')
+
 
 
 # Create your views here.

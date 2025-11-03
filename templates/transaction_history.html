@@ -1,0 +1,43 @@
+{% extends 'base.html' %}
+{% block title %}Transaction History{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+  <h2 class="mb-4 text-center">💰 Transaction History</h2>
+
+  {% if cryptotransactions %}
+  <table class="table table-bordered table-striped text-center align-middle">
+    <thead class="table-dark">
+      <tr>
+        <th>Crypto</th>
+        <th>Amount (Crypto)</th>
+        <th>Amount (₦)</th>
+        <th>Status</th>
+        <th>Date</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for tx in cryptotransactions %}
+      <tr>
+        <td>{{ tx.crypto_symbol }}</td>
+        <td>{{ tx.crypto_amount|floatformat:8 }}</td>
+        <td>₦{{ tx.amount_ngn|floatformat:2 }}</td>
+        <td>
+          {% if tx.status == 'completed' %}
+          <span class="badge bg-success">Completed</span>
+          {% elif tx.status == 'pending' %}
+          <span class="badge bg-warning text-dark">Pending</span>
+          {% else %}
+          <span class="badge bg-danger">Failed</span>
+          {% endif %}
+        </td>
+        <td>{{ tx.created_at|date:"Y-m-d H:i" }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="text-center text-muted">No transactions yet.</p>
+  {% endif %}
+</div>
+{% endblock %}
