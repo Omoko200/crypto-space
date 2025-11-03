@@ -25,7 +25,7 @@ SECRET_KEY = 'django-insecure-mfgwb@7iglmzas*)hy10$g@yzwj(j5wej+-p*(=rj*$doi4m%5
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = ['crypto-space-931o0.sevalla.app']
 
 
 # Application definition
@@ -38,7 +38,7 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     'coin',
-    'rest_framework',
+    # 'rest_framework',
 ]
 
 AUTH_USER_MODEL = 'coin.User'
